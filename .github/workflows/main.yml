@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3.2.0
+        with:
+          ref: 1ef74289ef67f2e95657a20566c7b596c3d547dc
       - name: Export version to variable
         run: |
             export LENS_VERSION=dev
