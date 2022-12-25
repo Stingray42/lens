@@ -26,6 +26,7 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 16.16.0
+      - run: cd
       - name: Build Lens
         run: |
           mkdir releasefiles
@@ -69,7 +70,6 @@ jobs:
             cp dist/OpenLens*.exe releasefiles/OpenLens-${{ env.LENS_VERSION }}.exe
             cp dist/OpenLens*.exe dist/OpenLens-${{ env.LENS_VERSION }}.exe
           fi
-        working-directory: lens
         env:
           APPBUNDLEID: "io.kontena.lens-app"
           APPLEID: ${{ secrets.APPLEID }}
@@ -89,7 +89,7 @@ jobs:
           else
             for filename in OpenLens-${{ env.LENS_VERSION }}*; do shasum -a 256 ${filename} | tee ${filename}.sha256 ; done
           fi
-        working-directory: lens/dist
+        working-directory: dist
 
       - uses: actions/upload-artifact@v3
         if: github.ref != 'refs/heads/main'
