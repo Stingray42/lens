@@ -1,97 +1,138 @@
-name: Publish docs via GitHub Pages
+name: Build Lens
+
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - master
-  release:
-    types:
-      - published
-concurrency:
-  group: publish-docs
-  cancel-in-progress: true
+    branches: [ main ]
+    paths-ignore:
+      - '**/README.md'
+  pull_request:
+
 jobs:
-  verify-docs:
-    name: Verify docs
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [16.x]
-    steps:
-      - name: Set up Python 3.7
-        uses: actions/setup-python@v2
-        with:
-          python-version: "3.x"
-
-      - name: Checkout Release from lens
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - name: Using Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Generate Extensions API Reference using typedocs
-        run: |
-          yarn install
-          yarn typedocs-extensions-api
-
-      - name: Verify that the markdown is valid
-        run: |
-          yarn run verify-docs
-
   build:
-    name: Deploy docs
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [16.x]
-    needs: verify-docs
+        os: [windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 360
     steps:
-      - name: Set up Python 3.7
-        uses: actions/setup-python@v2
+      - name: Checkout
+        uses: actions/checkout@v3.2.0
+      - name: Export version to variable
+        run: |
+            export LENS_VERSION=dev
+            echo "LENS_VERSION=$LENS_VERSION" >> $GITHUB_ENV
+        shell: bash
+      - uses: actions/setup-node@v3
         with:
-          python-version: "3.x"
-
-      - name: Install dependencies
+          node-version: 16.16.0
+      - name: Build Lens
         run: |
-          python -m pip install --upgrade pip
-          pip install git+https://${{ secrets.GH_TOKEN }}@github.com/lensapp/mkdocs-material-insiders.git
-          pip install mike
+          mkdir releasefiles
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            choco install visualstudio2019buildtools visualstudio2019-workload-vctools
+          fi
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            if [ "${CSC_LINK}" = "" ]; then
+              unset CSC_LINK
+            fi
+            
+            if [ "${CSC_KEY_PASSWORD}" = "" ]; then
+              unset CSC_KEY_PASSWORD
+            fi
+          
+            env ELECTRON_BUILDER_EXTRA_ARGS="--arm64 --x64 --config.dmg.sign=false" make build
+            for file in dist/OpenLens-${{ env.LENS_VERSION }}.dmg; do
+              if [[ "$file" == *"arm64"* ]]; then
+                cp "$file" releasefiles/OpenLens-${{ env.LENS_VERSION }}-arm64.dmg
+              else
+                cp "$file" releasefiles/OpenLens-${{ env.LENS_VERSION }}.dmg
+              fi
+            done
+            for file in dist/OpenLens-${{ env.LENS_VERSION }}-mac.zip; do
+              if [[ "$file" == *"arm64"* ]]; then
+                cp "$file" releasefiles/OpenLens-${{ env.LENS_VERSION }}-arm64.zip
+              else
+                cp "$file" releasefiles/OpenLens-${{ env.LENS_VERSION }}.zip
+              fi
+            done
+          elif [ "$RUNNER_OS" == "Linux" ]; then
+            env ELECTRON_BUILDER_EXTRA_ARGS="--x64 --arm64" make build
+            cp dist/OpenLens-${{ env.LENS_VERSION }}.x86_64.AppImage releasefiles/OpenLens-${{ env.LENS_VERSION }}.AppImage
+            cp dist/OpenLens-${{ env.LENS_VERSION }}.amd64.deb releasefiles/OpenLens-${{ env.LENS_VERSION }}.deb
+            cp dist/OpenLens-${{ env.LENS_VERSION }}.x86_64.rpm releasefiles/OpenLens-${{ env.LENS_VERSION }}.rpm
+            cp dist/OpenLens-${{ env.LENS_VERSION }}.arm64.AppImage releasefiles/OpenLens-${{ env.LENS_VERSION }}.arm64.AppImage
+            cp dist/OpenLens-${{ env.LENS_VERSION }}.arm64.deb releasefiles/OpenLens-${{ env.LENS_VERSION }}.arm64.deb
+            cp dist/OpenLens-${{ env.LENS_VERSION }}.aarch64.rpm releasefiles/OpenLens-${{ env.LENS_VERSION }}.arm64.rpm
+          else
+            make build
+            cp dist/OpenLens*.exe releasefiles/OpenLens-${{ env.LENS_VERSION }}.exe
+            cp dist/OpenLens*.exe dist/OpenLens-${{ env.LENS_VERSION }}.exe
+          fi
+        shell: bash
+        working-directory: lens
+        env:
+          APPBUNDLEID: "io.kontena.lens-app"
+          APPLEID: ${{ secrets.APPLEID }}
+          APPLEIDPASS: ${{ secrets.APPLEIDPASS }}
+          CSC_LINK: ${{ runner.os == 'macos' && secrets.CSC_LINK || secrets.CSC_LINK_WIN }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macos' && secrets.CSC_KEY_PASSWORD || secrets.CSC_KEY_PASSWORD_WIN}}
+          CSC_LINK_WIN: ${{ secrets.CSC_LINK_WIN }}
+          CSC_KEY_PASSWORD_WIN: ${{ secrets.CSC_KEY_PASSWORD_WIN }}
+          WIN_CSC_LINK: ${{ secrets.CSC_LINK_WIN }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD_WIN }}
+          CSC_FOR_PULL_REQUEST: true
 
-      - name: Checkout Release from lens
-        uses: actions/checkout@v3
+      - name: Calculate SHA256 checksum
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            certutil -hashfile OpenLens-${{ env.LENS_VERSION }}.exe SHA256 | tee OpenLens-${{ env.LENS_VERSION }}.exe.sha256
+          else
+            for filename in OpenLens-${{ env.LENS_VERSION }}*; do shasum -a 256 ${filename} | tee ${filename}.sha256 ; done
+          fi
+        shell: bash
+        working-directory: lens/dist
+
+      - uses: actions/upload-artifact@v3
+        if: github.ref != 'refs/heads/main'
         with:
-          fetch-depth: 0
+          name: OpenLens-${{ matrix.os }}
+          retention-days: 5
+          path: |
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.dmg
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.AppImage
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.deb
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.rpm
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.zip
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}.exe
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.sha256
 
-      - name: git config
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-
-      - name: Using Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
+      - name: Generate Changelog
+        run: curl -s https://api.github.com/repos/lensapp/lens/releases/latest | jq -r 'select(.prerelease == false) | .body[0:]' > ${{ github.workspace }}-CHANGELOG.txt
+      - name: Release
+        uses: softprops/action-gh-release@v0.1.14
+        if: github.ref == 'refs/heads/main'
         with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Generate Extensions API Reference using typedocs
-        run: |
-          yarn install
-          yarn typedocs-extensions-api
-
-      - name: mkdocs deploy master
-        if: contains(github.ref, 'refs/heads/master')
-        run: |
-          mike deploy --push master
-
-      - name: Get the release version
-        if: contains(github.ref, 'refs/tags/v') && !github.event.release.prerelease
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
-
-      - name: mkdocs deploy new release
-        if: contains(github.ref, 'refs/tags/v') && !github.event.release.prerelease
-        run: |
-          mike deploy --push --update-aliases ${{ steps.get_version.outputs.VERSION }} latest
-          mike set-default --push ${{ steps.get_version.outputs.VERSION }}
+          tag_name: v${{ env.LENS_VERSION }}
+          body_path: ${{ github.workspace }}-CHANGELOG.txt
+          files: | 
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.dmg
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.AppImage
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.deb
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.rpm
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.zip
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}.exe
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.sha256
+      - name: Latest
+        uses: softprops/action-gh-release@v0.1.14
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: Latest
+          files: | 
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.dmg
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.AppImage
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.deb
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.rpm
+            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.zip
+            lens/dist/OpenLens.Setup.${{ env.LENS_VERSION }}.exe
+            lens/dist/lates*.yml
