@@ -93,13 +93,13 @@ jobs:
           name: OpenLens-${{ matrix.os }}
           retention-days: 5
           path: |
-            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.dmg
-            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.AppImage
-            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.deb
-            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.rpm
-            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.zip
-            lens/dist/OpenLens-${{ env.LENS_VERSION }}.exe
-            lens/dist/OpenLens-${{ env.LENS_VERSION }}*.sha256
+            dist/OpenLens-${{ env.LENS_VERSION }}*.dmg
+            dist/OpenLens-${{ env.LENS_VERSION }}*.AppImage
+            dist/OpenLens-${{ env.LENS_VERSION }}*.deb
+            dist/OpenLens-${{ env.LENS_VERSION }}*.rpm
+            dist/OpenLens-${{ env.LENS_VERSION }}*.zip
+            dist/OpenLens-${{ env.LENS_VERSION }}.exe
+            dist/OpenLens-${{ env.LENS_VERSION }}*.sha256
 
       - name: Generate Changelog
         run: curl -s https://api.github.com/repos/lensapp/lens/releases/latest | jq -r 'select(.prerelease == false) | .body[0:]' > ${{ github.workspace }}-CHANGELOG.txt
