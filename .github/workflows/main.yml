@@ -69,7 +69,6 @@ jobs:
             cp dist/OpenLens*.exe releasefiles/OpenLens-${{ env.LENS_VERSION }}.exe
             cp dist/OpenLens*.exe dist/OpenLens-${{ env.LENS_VERSION }}.exe
           fi
-        shell: bash
         working-directory: lens
         env:
           APPBUNDLEID: "io.kontena.lens-app"
@@ -90,7 +89,6 @@ jobs:
           else
             for filename in OpenLens-${{ env.LENS_VERSION }}*; do shasum -a 256 ${filename} | tee ${filename}.sha256 ; done
           fi
-        shell: bash
         working-directory: lens/dist
 
       - uses: actions/upload-artifact@v3
