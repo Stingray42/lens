@@ -132,7 +132,6 @@
     "files": [
       "static/**/*"
     ],
-    "afterSign": "build/notarize.js",
     "extraResources": [
       {
         "from": "templates/",
